@@ -5,6 +5,9 @@ module Data.BinPack2D
 	, Bin()
 	, emptyBin
 	, pack
+	, BinArray(..)
+	, emptyBinArray
+	, packArray
 	) where
 
 import Control.Applicative
@@ -14,6 +17,8 @@ import Data.Ord
 import Data.Maybe
 import Data.Semigroup
 import Data.Monoid
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Q
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 
@@ -21,7 +26,9 @@ data Position
 	= Position
 	{ positionX :: !Word
 	, positionY :: !Word
-	} deriving (Eq, Show)
+	} deriving (Eq)
+instance Show Position where
+	show (Position x y) = "(Position " ++ show x ++ ' ' : show y ++ ")"
 instance Ord Position where
 	Position x0 y0 `compare` Position x1 y1 = compare y0 y1 <> compare x0 x1
 
@@ -29,7 +36,9 @@ data Size
 	= Size
 	{ sizeWidth  :: !Word
 	, sizeHeight :: !Word
-	} deriving (Eq, Show)
+	} deriving (Eq)
+instance Show Size where
+	show (Size w h) = "(Size " ++ show w ++ ' ' : show h ++ ")"
 instance Ord Size where
 	Size w0 h0 `compare` Size w1 h1 = compare h0 h1 <> compare w0 w1
 
@@ -47,6 +56,27 @@ emptyBin size = Bin
 	, binGuillotine = mempty
 	}
 
+-- Internal monoid for pack
+data PackM w
+	= EmptyPackM
+	| PackM
+	{ packMwastage  :: !w
+	, packMposition :: !Position
+	, packMbin      :: Bin
+	}
+instance Ord w => Semigroup (PackM w) where
+	EmptyPackM       <> (!b)             = b
+	a                <> EmptyPackM       = a
+	a@(PackM wa _ _) <> b@(PackM wb _ _)
+		| wa <= wb  = a
+		| otherwise = b
+instance Ord w => Monoid (PackM w) where
+	mempty = EmptyPackM
+
+fromPackM :: PackM w -> Maybe (Position, Bin)
+fromPackM (PackM _ pos bin) = Just (pos, bin)
+fromPackM _                 = Nothing
+
 pack :: Size -> Bin -> Maybe (Position, Bin)
 pack (Size 0  _ ) bin@Bin{..} = Nothing
 pack (Size _  0 ) bin@Bin{..} = Nothing
@@ -58,7 +88,9 @@ pack (Size rw rh) bin@Bin{..}
 	-- into the skyline tail and bin size, if such fit exists.
 	skyFit :: Position -> [Position] -> Maybe Word
 	skyFit (Position x y) ps
-		= if x+rw > sizeWidth binSize then Nothing else skyFit1 (x+rw) y ps
+		= if x+rw > sizeWidth binSize || y+rh > sizeHeight binSize
+			then Nothing
+			else skyFit1 (x+rw) y ps
 	skyFit1 l py0 [] = Just py0
 	skyFit1 l py0 (Position x y : ps)
 		| x >= l    = Just py0
@@ -97,25 +129,25 @@ pack (Size rw rh) bin@Bin{..}
 	skyWaste2 x y 0 h cont = cont -- Should never happen.
 	skyWaste2 x y w h cont = (Position x y, Size w h) : cont
 	
-	-- Given skyline, enumerate the options.
-	skyEnum :: [Position] -> Map Position Bin
-	skyEnum ps = skyEnum1 (sizeHeight binSize) [] ps
-	skyEnum1 _ _ [] = mempty
-	skyEnum1 y0 rps (p@(Position x1 y1) : ps)
-		| y1 >= y0  = skyEnum1 y1 (p:rps) ps
-		| otherwise = skyEnum2 x1 y1 rps ps <> skyEnum1 y1 (p:rps) ps
-	skyEnum2 x y rps ps = fromMaybe mempty $ do
+	-- From the current skyline, generate solutions and select the minimum.
+	skyMin :: PackM Position
+	skyMin = skyMin1 (sizeHeight binSize) [] binSkyline
+	skyMin1 _ _ [] = mempty
+	skyMin1 y0 rps (p@(Position x1 y1) : ps)
+		| y1 >= y0  = skyMin1 y1 (p:rps) ps
+		| otherwise = skyMin2 x1 y1 rps ps <> skyMin1 y1 (p:rps) ps
+	skyMin2 x y rps ps = fromMaybe mempty $ do
 		let pos0 = Position x y
 		nh <- skyFit pos0 ps
 		let pos1 = pos0 { positionY = nh }
 		let waste = skyWaste (positionY pos0) pos1 ps
-		return $ M.singleton pos1 bin
+		return $ PackM pos1 pos1 bin
 			{ binSkyline    = skyGlue rps $ skyTail pos1 ps
 			, binGuillotine = guilComb waste binGuillotine
 			}
 		
 
-	skyline = M.lookupMin $ skyEnum binSkyline
+	skyline = fromPackM skyMin
 
 	-- Given wasted space and guillotine, combine them to a new guillotine.
 	guilComb :: [(Position, Size)] -> Map Position Size -> Map Position Size
@@ -130,7 +162,49 @@ pack (Size rw rh) bin@Bin{..}
 		let nsz = Size (sizeWidth sz + sizeWidth szL) (sizeHeight sz)
 		pure $ M.insert posL nsz g0
 
-	-- TODO
-	guillotine = Nothing
+	-- Given placement position and free size, calculate the new guillotine.
+	guilNew :: Position -> Size -> Map Position Size
+	guilNew pos free = g3 where
+		g1 = M.delete pos binGuillotine
+		g2 = if rh < sizeHeight free
+			then M.insert
+				(Position (positionX pos) (positionY pos + rh))
+				(Size rw (sizeHeight free - rh))
+				g1
+			else g1
+		g3 = if rw < sizeWidth free
+			then M.insert
+				(Position (positionX pos + rw) (positionY pos))
+				(Size (sizeWidth free - rw) (sizeHeight free))
+				g2
+			else g2
 
+	-- From the current guillotine, generate solutions and select the
+	-- one with minimum waste.
+	guilMin :: PackM Word
+	guilMin = M.foldMapWithKey guilMin1 binGuillotine
+	guilMin1 pos free
+		| rw <= sizeWidth free && rh <= sizeHeight free
+			= PackM (sizeWidth free * sizeHeight free - rw * rh) pos bin
+				{ binGuillotine = guilNew pos free
+				}
+		| otherwise = mempty
+	
+	guillotine = fromPackM guilMin
+
+newtype BinArray
+	= BinArray
+	{ binArrayBins :: Seq Bin
+	}
+
+emptyBinArray :: Word -> Size -> BinArray
+emptyBinArray depth size = BinArray $ Q.replicate (fromIntegral depth) $ emptyBin size
+
+packArray :: Size -> BinArray -> Maybe (Word, Position, BinArray)
+packArray size BinArray{..} = foldr (<|>) Nothing $ fmap tryPack [0..length binArrayBins] where
+	tryPack i = do
+		let bin0 = binArrayBins `Q.index` i
+		(pos, bin1) <- pack size bin0
+		let arr1 = BinArray { binArrayBins = Q.update i bin1 binArrayBins }
+		pure (fromIntegral i, pos, arr1)
 
