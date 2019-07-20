@@ -5,7 +5,12 @@ cabal-version:       2.4
 name:                binpack2d
 version:             0.1.0.0
 synopsis:            2D bin packing algorithm.
--- description:
+description:         Bottom left skyline algorithm feeding wastage to
+                     a bestfit guillotine algorithm with a minor
+                     modification, which sorts fragments by y coordinate and
+                     then by x coordinate. This allows it to combine new
+                     fragments with adjacent ones, if they are aligned and
+                     have the same height.
 -- bug-reports:
 license:             BSD-3-Clause
 license-file:        LICENSE

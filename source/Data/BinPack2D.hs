@@ -22,6 +22,7 @@ import qualified Data.Sequence as Q
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 
+-- | Discrete position.
 data Position
 	= Position
 	{ positionX :: !Word
@@ -32,6 +33,7 @@ instance Show Position where
 instance Ord Position where
 	Position x0 y0 `compare` Position x1 y1 = compare y0 y1 <> compare x0 x1
 
+-- | Discrete size.
 data Size
 	= Size
 	{ sizeWidth  :: !Word
@@ -42,6 +44,8 @@ instance Show Size where
 instance Ord Size where
 	Size w0 h0 `compare` Size w1 h1 = compare h0 h1 <> compare w0 w1
 
+-- | Axis aligned two dimensional bounded rectangular bin from which axis aligned
+-- rectangles can be allocated.
 data Bin
 	= Bin
 	{ binSize       :: !Size
@@ -49,6 +53,7 @@ data Bin
 	, binGuillotine :: Map Position Size
 	} deriving (Show)
 
+-- | Empty 'Bin' with the given size.
 emptyBin :: Size -> Bin
 emptyBin size = Bin
 	{ binSize       = size
@@ -56,7 +61,7 @@ emptyBin size = Bin
 	, binGuillotine = mempty
 	}
 
--- Internal monoid for pack
+-- | Internal monoid for 'pack'.
 data PackM w
 	= EmptyPackM
 	| PackM
@@ -73,11 +78,16 @@ instance Ord w => Semigroup (PackM w) where
 instance Ord w => Monoid (PackM w) where
 	mempty = EmptyPackM
 
+-- | 'PackM' to 'Maybe'.
 fromPackM :: PackM w -> Maybe (Position, Bin)
 fromPackM (PackM _ pos bin) = Just (pos, bin)
 fromPackM _                 = Nothing
 
-pack :: Size -> Bin -> Maybe (Position, Bin)
+-- | Allocate a new rectangle from a 'Bin'.
+pack
+	:: Size -- ^ The requested size of the rectangle.
+	-> Bin  -- ^ The 'Bin' from which to allocate.
+	-> Maybe (Position, Bin) -- ^ The bottom left coordinate of the allocated rectangle and the new 'Bin'.
 pack (Size 0  _ ) bin@Bin{..} = Nothing
 pack (Size _  0 ) bin@Bin{..} = Nothing
 pack (Size rw rh) bin@Bin{..}
@@ -192,15 +202,21 @@ pack (Size rw rh) bin@Bin{..}
 	
 	guillotine = fromPackM guilMin
 
+-- | An array of 'Bin's.
 newtype BinArray
 	= BinArray
 	{ binArrayBins :: Seq Bin
 	}
 
+-- | An empty 'BinArray' with the given number of layers and bin size.
 emptyBinArray :: Word -> Size -> BinArray
 emptyBinArray depth size = BinArray $ Q.replicate (fromIntegral depth) $ emptyBin size
 
-packArray :: Size -> BinArray -> Maybe (Word, Position, BinArray)
+-- | Allocate a rectangle from a 'BinArray'.
+packArray
+	:: Size     -- ^ The requested size of the rectangle.
+	-> BinArray -- ^ The 'BinArray' from which to allocate.
+	-> Maybe (Word, Position, BinArray) -- ^ The zero based 'Bin' index and the bottom left coordinate of the allocated rectangle and the new 'BinArray'.
 packArray size BinArray{..} = foldr (<|>) Nothing $ fmap tryPack [0..length binArrayBins] where
 	tryPack i = do
 		let bin0 = binArrayBins `Q.index` i
