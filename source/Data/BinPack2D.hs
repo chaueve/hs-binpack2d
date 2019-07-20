@@ -167,7 +167,7 @@ pack (Size rw rh) bin@Bin{..}
 	guilNew pos free = g3 where
 		g1 = M.delete pos binGuillotine
 		g2 = if rh < sizeHeight free
-			then M.insert
+			then guilComb1
 				(Position (positionX pos) (positionY pos + rh))
 				(Size rw (sizeHeight free - rh))
 				g1
