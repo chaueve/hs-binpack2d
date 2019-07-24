@@ -4,6 +4,7 @@ module Data.BinPack2D
 	, Size(..)
 	, Bin()
 	, emptyBin
+	, binSize
 	, pack
 	, BinArray()
 	, emptyBinArray
@@ -51,7 +52,7 @@ instance Ord Size where
 -- rectangles can be allocated.
 data Bin
 	= Bin
-	{ binSize       :: !Size
+	{ _binSize       :: !Size
 	, binSkyline    :: [Position]
 	, binGuillotine :: Map Position Size
 	} deriving (Show)
@@ -62,10 +63,14 @@ emptyBin :: Size -> Bin
 emptyBin (Size 0 _) = emptyBinError
 emptyBin (Size _ 0) = emptyBinError
 emptyBin size = Bin
-	{ binSize       = size
+	{ _binSize       = size
 	, binSkyline    = [Position 0 0]
 	, binGuillotine = mempty
 	}
+
+-- | Get the size of the 'Bin'.
+binSize :: Bin -> Size
+binSize = _binSize
 
 -- | Internal monoid for 'pack'.
 data PackM w
@@ -97,14 +102,14 @@ pack
 pack (Size 0  _ ) bin@Bin{..} = Nothing
 pack (Size _  0 ) bin@Bin{..} = Nothing
 pack (Size rw rh) bin@Bin{..}
-	| rw > sizeWidth binSize || rh > sizeHeight binSize = Nothing
+	| rw > sizeWidth _binSize || rh > sizeHeight _binSize = Nothing
 	| otherwise = guillotine <|> skyline where
 	-- Given starting position and skyline tail,
 	-- calculate y coordinate fitting the rectangle of size size
 	-- into the skyline tail and bin size, if such fit exists.
 	skyFit :: Position -> [Position] -> Maybe Word
 	skyFit (Position x y) ps
-		= if x+rw > sizeWidth binSize || y+rh > sizeHeight binSize
+		= if x+rw > sizeWidth _binSize || y+rh > sizeHeight _binSize
 			then Nothing
 			else skyFit1 (x+rw) y ps
 	skyFit1 l py0 [] = Just py0
@@ -112,7 +117,7 @@ pack (Size rw rh) bin@Bin{..}
 		| x >= l    = Just py0
 		| otherwise =
 			let py1 = max py0 y
-			in if py1 + rh > sizeHeight binSize then Nothing else skyFit1 l py1 ps
+			in if py1 + rh > sizeHeight _binSize then Nothing else skyFit1 l py1 ps
 
 	-- Given position and skyline tail, calculate
 	-- the new skyline tail. The rectangle is assumed to fit.
@@ -147,7 +152,7 @@ pack (Size rw rh) bin@Bin{..}
 	
 	-- From the current skyline, generate solutions and select the minimum.
 	skyMin :: PackM Position
-	skyMin = skyMin1 (sizeHeight binSize) [] binSkyline
+	skyMin = skyMin1 (sizeHeight _binSize) [] binSkyline
 	skyMin1 _ _ [] = mempty
 	skyMin1 y0 rps (p@(Position x1 y1) : ps)
 		| y1 >= y0  = skyMin1 y1 (p:rps) ps
@@ -225,7 +230,7 @@ binArrayLayers BinArray{..} = fromIntegral $ V.length binArrayBins
 
 -- | Get the size of a 'BinArray'.
 binArraySize :: BinArray -> Size
-binArraySize BinArray{..} = binSize $ V.head binArrayBins
+binArraySize BinArray{..} = _binSize $ V.head binArrayBins
 
 -- | Allocate a rectangle from a 'BinArray'.
 packArray
