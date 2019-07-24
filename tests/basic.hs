@@ -25,12 +25,10 @@ instance Show LargeSize where
 
 main = defaultMain $ testGroup "Basic"
 	[ testGroup "Randomized"
-		[ QC.testProperty "All draws are inside bin" inFrameCheck
-		, QC.testProperty "There are no overlaps" noOverlapCheck
+		[ QC.testProperty "All draws are inside the bin" inFrameCheck
+		, QC.testProperty "There are no overlaping draws" noOverlapCheck
 		, QC.testProperty "Has acceptable fill ratio (may fail)" acceptableRatioCheck
-		-- There is some problem with this.
-		-- The bin should not be lossy even though it is fragmenting.
-		--, QC.testProperty "Long and fine enough rectangle sequence fills the bin" fullCheck
+		, QC.testProperty "Does not loose track of any non allocated space" fullCheck
 		]
 	]
 

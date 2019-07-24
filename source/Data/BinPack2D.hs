@@ -137,7 +137,7 @@ pack (Size rw rh) bin@Bin{..}
 	-- The rectangle is assumed to fit.
 	skyWaste :: Word -> Position -> [Position] -> [(Position, Size)]
 	skyWaste oy (Position px py) ps = skyWaste1 (px+rw) py px oy ps
-	skyWaste1 _ _ _ _ [] = []
+	skyWaste1 l c x0 y0 [] = skyWaste2 x0 y0 (l-x0) (c-y0) []
 	skyWaste1 l c x0 y0 (Position x1 y1 : ps)
 		| x1 >= l   = skyWaste2 x0 y0 (l-x0)  (c-y0) []
 		| otherwise = skyWaste2 x0 y0 (x1-x0) (c-y0) (skyWaste1 l c x1 y1 ps)
@@ -212,7 +212,7 @@ pack (Size rw rh) bin@Bin{..}
 newtype BinArray
 	= BinArray
 	{ binArrayBins :: Vector Bin
-	}
+	} deriving (Show)
 
 -- | An empty 'BinArray' with the given number of layers and bin size.
 emptyBinArray :: Word -> Size -> BinArray

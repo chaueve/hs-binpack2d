@@ -20,6 +20,11 @@ maintainer:          topi.karvonen@gmail.com
 category:            Data
 extra-source-files:  CHANGELOG.md
 
+flag debug-exe
+  description:         Build the debug executable.
+  default:             False
+  manual:              True
+
 library
   ghc-options:         -Wno-tabs
   exposed-modules:     Data.BinPack2D
@@ -43,4 +48,15 @@ test-suite basic
                      , containers ^>=0.6.0.1
                      , tasty ^>=1.2.3
                      , tasty-quickcheck ^>=0.10.1
+
+executable debug-bin
+  ghc-options:         -Wno-tabs
+  main-is:             debug/debug-bin.hs
+  default-language:    Haskell2010
+  build-depends:       binpack2d
+                     , base ^>=4.12.0.0
+  if flag(debug-exe)
+    buildable: True
+  else
+    buildable: False
 
