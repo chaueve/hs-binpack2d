@@ -5,8 +5,10 @@ module Data.BinPack2D
 	, Bin()
 	, emptyBin
 	, pack
-	, BinArray(..)
+	, BinArray()
 	, emptyBinArray
+	, binArrayLayers
+	, binArraySize
 	, packArray
 	) where
 
@@ -17,8 +19,9 @@ import Data.Ord
 import Data.Maybe
 import Data.Semigroup
 import Data.Monoid
-import Data.Sequence (Seq)
-import qualified Data.Sequence as Q
+import Data.Vector (Vector)
+import qualified Data.Vector.Mutable as V (write)
+import qualified Data.Vector as V
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 
@@ -53,8 +56,11 @@ data Bin
 	, binGuillotine :: Map Position Size
 	} deriving (Show)
 
+emptyBinError = error "Bin with zero area."
 -- | Empty 'Bin' with the given size.
 emptyBin :: Size -> Bin
+emptyBin (Size 0 _) = emptyBinError
+emptyBin (Size _ 0) = emptyBinError
 emptyBin size = Bin
 	{ binSize       = size
 	, binSkyline    = [Position 0 0]
@@ -205,22 +211,33 @@ pack (Size rw rh) bin@Bin{..}
 -- | An array of 'Bin's.
 newtype BinArray
 	= BinArray
-	{ binArrayBins :: Seq Bin
+	{ binArrayBins :: Vector Bin
 	}
 
 -- | An empty 'BinArray' with the given number of layers and bin size.
 emptyBinArray :: Word -> Size -> BinArray
-emptyBinArray depth size = BinArray $ Q.replicate (fromIntegral depth) $ emptyBin size
+emptyBinArray 0 _ = error "BinArray with zero layers."
+emptyBinArray depth size = BinArray $ V.replicate (fromIntegral depth) $ emptyBin size
+
+-- | Get the number of layers in a 'BinArray'.
+binArrayLayers :: BinArray -> Word
+binArrayLayers BinArray{..} = fromIntegral $ V.length binArrayBins
+
+-- | Get the size of a 'BinArray'.
+binArraySize :: BinArray -> Size
+binArraySize BinArray{..} = binSize $ V.head binArrayBins
 
 -- | Allocate a rectangle from a 'BinArray'.
 packArray
 	:: Size     -- ^ The requested size of the rectangle.
 	-> BinArray -- ^ The 'BinArray' from which to allocate.
-	-> Maybe (Word, Position, BinArray) -- ^ The zero based 'Bin' index and the bottom left coordinate of the allocated rectangle and the new 'BinArray'.
-packArray size BinArray{..} = foldr (<|>) Nothing $ fmap tryPack [0..length binArrayBins] where
+	-> Maybe (Word, Position, BinArray)
+	-- ^ The zero based 'Bin' index and the bottom left coordinate
+	-- of the allocated rectangle and the new 'BinArray'.
+packArray size BinArray{..} = foldr (<|>) Nothing $ fmap tryPack [0 .. V.length binArrayBins - 1] where
 	tryPack i = do
-		let bin0 = binArrayBins `Q.index` i
+		let bin0 = binArrayBins V.! i
 		(pos, bin1) <- pack size bin0
-		let arr1 = BinArray { binArrayBins = Q.update i bin1 binArrayBins }
+		let arr1 = BinArray { binArrayBins = V.modify (\v -> V.write v i bin1) binArrayBins }
 		pure (fromIntegral i, pos, arr1)
 
